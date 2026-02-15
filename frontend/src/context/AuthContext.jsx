@@ -1,28 +1,30 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const navigate = useNavigate();
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   /*
-  Load user from localStorage on first load
+  Load user from localStorage on startup
   */
   useEffect(() => {
     try {
-      const storedUser = localStorage.getItem('user');
-      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem("user");
+      const token = localStorage.getItem("token");
 
-      if (storedUser && storedToken) {
+      if (storedUser && token) {
         setUser(JSON.parse(storedUser));
       }
-    } catch (err) {
-      console.error("Auth load error:", err);
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      setUser(null);
+    } catch (error) {
+      console.error("Auth load error:", error);
+
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
     }
 
     setLoading(false);
@@ -32,79 +34,63 @@ export function AuthProvider({ children }) {
   Login function
   */
   const login = (userData, token) => {
+    console.log("LOGIN SUCCESS:", userData);
 
-    const cleanUser = {
-      _id: userData._id,
-      name: userData.name,
-      email: userData.email,
-      role: userData.role,
-    };
+    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("token", token);
 
-    localStorage.setItem('user', JSON.stringify(cleanUser));
-    localStorage.setItem('token', token);
+    setUser(userData);
 
-    setUser(cleanUser);
+    navigate("/", { replace: true });
   };
 
   /*
   Logout function
   */
   const logout = () => {
+    console.log("LOGOUT");
 
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
 
     setUser(null);
 
-    window.location.href = "/login";
+    navigate("/login", { replace: true });
   };
 
   /*
   Update user
   */
   const updateUser = (userData) => {
+    localStorage.setItem("user", JSON.stringify(userData));
 
-    const cleanUser = {
-      _id: userData._id,
-      name: userData.name,
-      email: userData.email,
-      role: userData.role,
-    };
-
-    localStorage.setItem('user', JSON.stringify(cleanUser));
-    setUser(cleanUser);
+    setUser(userData);
   };
 
   /*
-  Check admin
+  Helper flags
   */
+  const isAuthenticated = !!user;
   const isAdmin = user?.role === "admin";
 
-  /*
-  Context value
-  */
-  const value = {
-    user,
-    loading,
-    login,
-    logout,
-    updateUser,
-    isAdmin,
-    isAuthenticated: !!user
-  };
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        logout,
+        updateUser,
+        isAuthenticated,
+        isAdmin,
+      }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );
 }
 
-/*
-Hook
-*/
 export function useAuth() {
-
   const context = useContext(AuthContext);
 
   if (!context) {

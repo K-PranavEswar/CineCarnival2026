@@ -1,30 +1,35 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { authAPI } from '../services/api';
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { authAPI } from "../services/api";
 
 export default function Login() {
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
   const { login } = useAuth();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
 
     e.preventDefault();
 
-    setError('');
-    setLoading(true);
-
     try {
+
+      setError("");
+      setLoading(true);
+
+      console.log("LOGIN ATTEMPT:", email);
 
       const response = await authAPI.login({
         email,
         password
       });
+
+      console.log("LOGIN RESPONSE:", response.data);
 
       const data = response.data;
 
@@ -38,16 +43,13 @@ export default function Login() {
         data.token
       );
 
-      /* CRITICAL FIX FOR VERCEL */
-      window.location.href = "/";
-
     }
-    catch (err) {
+    catch (error) {
 
-      console.error(err);
+      console.error("LOGIN ERROR:", error);
 
       setError(
-        err.response?.data?.message ||
+        error.response?.data?.message ||
         "Invalid email or password"
       );
 
@@ -57,88 +59,73 @@ export default function Login() {
       setLoading(false);
 
     }
-
   };
 
   return (
-    <div className="min-h-screen min-h-[100dvh] flex items-center justify-center px-3 sm:px-4 py-6 sm:py-8 bg-carnival-dark bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-carnival-primary/20 via-carnival-dark to-carnival-dark">
+    <div className="min-h-screen flex items-center justify-center bg-carnival-dark">
 
-      <div className="w-full max-w-md animate-slide-up">
+      <div className="w-full max-w-md">
 
-        <div className="text-center mb-6 sm:mb-8">
+        <div className="text-center mb-6">
           <Link
             to="/"
-            className="text-2xl sm:text-3xl font-bold text-carnival-primary"
+            className="text-3xl font-bold text-red-500"
           >
             Cine Carnival
           </Link>
 
-          <p className="text-white/60 mt-2 text-sm sm:text-base">
+          <p className="text-white/60 mt-2">
             Sign in to book tickets
           </p>
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="bg-carnival-card rounded-2xl p-5 sm:p-8 shadow-xl border border-white/10"
+          className="bg-carnival-card p-6 rounded-xl border border-white/10"
         >
 
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/20 text-red-400 text-sm">
+            <div className="mb-4 text-red-400">
               {error}
             </div>
           )}
 
-          <div className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            required
+            value={email}
+            onChange={(e)=>setEmail(e.target.value)}
+            className="w-full mb-3 p-3 bg-black text-white rounded"
+          />
 
-            <div>
-              <label className="block text-sm font-medium text-white/80 mb-2">
-                Email
-              </label>
-
-              <input
-                type="email"
-                value={email}
-                onChange={(e)=>setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-carnival-primary"
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-white/80 mb-2">
-                Password
-              </label>
-
-              <input
-                type="password"
-                value={password}
-                onChange={(e)=>setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-carnival-primary"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-          </div>
+          <input
+            type="password"
+            placeholder="Password"
+            required
+            value={password}
+            onChange={(e)=>setPassword(e.target.value)}
+            className="w-full mb-4 p-3 bg-black text-white rounded"
+          />
 
           <button
             type="submit"
             disabled={loading}
-            className="mt-6 w-full py-3 rounded-lg bg-carnival-primary font-semibold text-white hover:bg-red-600 transition disabled:opacity-50"
+            className="w-full bg-red-500 p-3 rounded text-white"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
 
-          <p className="mt-4 text-center text-white/60 text-sm">
-            Don't have an account?{" "}
+          <p className="mt-4 text-center text-white/60">
+            Don't have account?
+
             <Link
               to="/register"
-              className="text-carnival-primary hover:underline"
+              className="text-red-500 ml-2"
             >
               Register
             </Link>
+
           </p>
 
         </form>
@@ -147,5 +134,4 @@ export default function Login() {
 
     </div>
   );
-
 }
