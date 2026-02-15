@@ -9,7 +9,11 @@ Priority:
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
-  'http://localhost:5000/api';
+  (window.location.hostname === "localhost"
+    ? "http://localhost:5000/api"
+    : "https://cinecarnival2026.onrender.com/api");
+
+console.log("API BASE URL:", API_BASE);
 
 const api = axios.create({
   baseURL: API_BASE,
