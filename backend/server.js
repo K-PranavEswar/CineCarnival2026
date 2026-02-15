@@ -10,9 +10,7 @@ import movieRoutes from "./routes/movieRoutes.js";
 import theatreRoutes from "./routes/theatreRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 
-
 const app = express();
-
 
 /* =========================
    CONFIG
@@ -20,10 +18,11 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-const CLIENT_URL =
-  process.env.CLIENT_URL ||
-  "http://localhost:5173";
-
+/* Allow BOTH local + vercel */
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://cine-carnival2026.vercel.app"
+];
 
 /* =========================
    MIDDLEWARE
@@ -31,15 +30,22 @@ const CLIENT_URL =
 
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: function (origin, callback) {
+
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS not allowed"));
+    },
     credentials: true,
   })
 );
 
 app.use(express.json());
-
 app.use(express.urlencoded({ extended: true }));
-
 
 /* =========================
    HEALTH CHECK
@@ -53,7 +59,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-
 /* =========================
    ROUTES
 ========================= */
@@ -63,15 +68,12 @@ app.use("/api/movies", movieRoutes);
 app.use("/api/theatres", theatreRoutes);
 app.use("/api/bookings", bookingRoutes);
 
-
 /* =========================
    DATABASE CONNECTION
 ========================= */
 
 mongoose
-  .connect(process.env.MONGODB_URI, {
-    autoIndex: true,
-  })
+  .connect(process.env.MONGODB_URI)
   .then(() => {
 
     console.log("MongoDB connected");
@@ -90,7 +92,6 @@ mongoose
 
   });
 
-
 /* =========================
    GLOBAL ERROR HANDLER
 ========================= */
@@ -100,7 +101,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
 
   res.status(500).json({
-    message: "Internal Server Error",
+    message: err.message || "Internal Server Error",
   });
 
 });
