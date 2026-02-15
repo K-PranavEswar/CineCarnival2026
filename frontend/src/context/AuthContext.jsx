@@ -3,51 +3,113 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  /*
+  Load user from localStorage on first load
+  */
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    if (stored && token) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch (_) {
-        localStorage.removeItem('user');
-        localStorage.removeItem('token');
+    try {
+      const storedUser = localStorage.getItem('user');
+      const storedToken = localStorage.getItem('token');
+
+      if (storedUser && storedToken) {
+        setUser(JSON.parse(storedUser));
       }
+    } catch (err) {
+      console.error("Auth load error:", err);
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      setUser(null);
     }
+
     setLoading(false);
   }, []);
 
+  /*
+  Login function
+  */
   const login = (userData, token) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+
+    const cleanUser = {
+      _id: userData._id,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+    };
+
+    localStorage.setItem('user', JSON.stringify(cleanUser));
     localStorage.setItem('token', token);
+
+    setUser(cleanUser);
   };
 
+  /*
+  Logout function
+  */
   const logout = () => {
-    setUser(null);
+
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+
+    setUser(null);
+
+    window.location.href = "/login";
   };
 
+  /*
+  Update user
+  */
   const updateUser = (userData) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+
+    const cleanUser = {
+      _id: userData._id,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+    };
+
+    localStorage.setItem('user', JSON.stringify(cleanUser));
+    setUser(cleanUser);
   };
 
-  const isAdmin = user?.role === 'admin';
+  /*
+  Check admin
+  */
+  const isAdmin = user?.role === "admin";
+
+  /*
+  Context value
+  */
+  const value = {
+    user,
+    loading,
+    login,
+    logout,
+    updateUser,
+    isAdmin,
+    isAuthenticated: !!user
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, isAdmin }}>
-      {children}
+    <AuthContext.Provider value={value}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 }
 
+/*
+Hook
+*/
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+
+  return context;
 }
