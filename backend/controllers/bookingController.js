@@ -1,443 +1,390 @@
-import mongoose from "mongoose";
-import Booking from "../models/Booking.js";
-import Theatre from "../models/Theatre.js";
-import Movie from "../models/Movie.js";
-import QRCode from "qrcode";
-import Razorpay from "razorpay";
-import crypto from "crypto";
+import dotenv from "dotenv"
+dotenv.config()
 
+import mongoose from "mongoose"
+import Booking from "../models/Booking.js"
+import Theatre from "../models/Theatre.js"
+import Movie from "../models/Movie.js"
+import QRCode from "qrcode"
+import Razorpay from "razorpay"
+import crypto from "crypto"
+
+if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+throw new Error("Razorpay keys missing in .env file")
+}
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
-
+key_id: process.env.RAZORPAY_KEY_ID,
+key_secret: process.env.RAZORPAY_KEY_SECRET
+})
 
 const generateQR = async (booking, movie, theatre) => {
-  const payload = JSON.stringify({
-    bookingId: booking._id.toString(),
-    movieName: movie.name,
-    theatreName: theatre.name,
-    seatNumbers: booking.seats,
-    userId: booking.userId.toString(),
-  });
-
-  return await QRCode.toDataURL(payload, {
-    width: 256,
-    margin: 2,
-  });
-};
-
-
+const payload = JSON.stringify({
+bookingId: booking._id.toString(),
+movieName: movie.name,
+theatreName: theatre.name,
+seatNumbers: booking.seats,
+userId: booking.userId.toString()
+})
+return await QRCode.toDataURL(payload, { width: 256, margin: 2 })
+}
 
 export const createBooking = async (req, res) => {
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+const session = await mongoose.startSession()
+session.startTransaction()
 
-  try {
+try {
 
-    const { movieId, theatreId, seats } = req.body;
-    const userId = req.user._id;
+const { movieId, theatreId, seats } = req.body
+const userId = req.user._id
 
-    if (!movieId || !theatreId || !seats?.length) {
-      throw new Error("Movie, theatre and seats required");
-    }
+if (!movieId || !theatreId || !seats?.length)
+throw new Error("Movie theatre seats required")
 
+const theatre = await Theatre.findById(theatreId).session(session)
 
-    const theatre = await Theatre.findById(theatreId).session(session);
+if (!theatre)
+throw new Error("Theatre not found")
 
-    if (!theatre)
-      throw new Error("Theatre not found");
+if (theatre.movieId.toString() !== movieId)
+throw new Error("Invalid theatre")
 
+const flatSeats = theatre.seats.flat()
 
-    if (theatre.movieId.toString() !== movieId)
-      throw new Error("Invalid theatre for this movie");
+for (const s of seats) {
+if (!flatSeats.includes(s))
+throw new Error(`Invalid seat ${s}`)
+}
 
+const updated = await Theatre.findOneAndUpdate(
+{ _id: theatreId, bookedSeats: { $nin: seats } },
+{ $addToSet: { bookedSeats: { $each: seats } } },
+{ new: true, session }
+)
 
-    const flatSeats = theatre.seats.flat();
+if (!updated)
+throw new Error("Seats already booked")
 
-    for (const seat of seats) {
-      if (!flatSeats.includes(seat))
-        throw new Error(`Invalid seat ${seat}`);
-    }
+const movie = await Movie.findById(movieId).session(session)
 
+const bookingArr = await Booking.create([{
+userId,
+movieId,
+theatreId,
+seats,
+isPaid: true,
+payment: { status: "paid" }
+}], { session })
 
-    const updated = await Theatre.findOneAndUpdate(
-      {
-        _id: theatreId,
-        bookedSeats: { $nin: seats },
-      },
-      {
-        $addToSet: { bookedSeats: { $each: seats } },
-      },
-      {
-        new: true,
-        session,
-      }
-    );
+const booking = bookingArr[0]
 
-    if (!updated)
-      throw new Error("Some seats already booked");
+const qr = await generateQR(booking, movie, theatre)
 
+booking.qrCode = qr
 
-    const movie = await Movie.findById(movieId).session(session);
+await booking.save({ session })
 
+await session.commitTransaction()
 
-    const booking = await Booking.create(
-      [
-        {
-          userId,
-          movieId,
-          theatreId,
-          seats,
-          isPaid: true,
-        },
-      ],
-      { session }
-    );
+const populated = await Booking.findById(booking._id)
+.populate("movieId")
+.populate("theatreId")
+.populate("userId", "name email")
 
+res.status(201).json(populated)
 
-    const qr = await generateQR(booking[0], movie, theatre);
+} catch (err) {
 
-    booking[0].qrCode = qr;
+await session.abortTransaction()
 
-    await booking[0].save({ session });
+res.status(400).json({ message: err.message })
 
+} finally {
 
-    await session.commitTransaction();
+session.endSession()
 
-    const populated = await Booking.findById(booking[0]._id)
-      .populate("movieId")
-      .populate("theatreId");
+}
 
-
-    res.status(201).json(populated);
-
-  } catch (err) {
-
-    await session.abortTransaction();
-
-    res.status(400).json({
-      message: err.message,
-    });
-
-  } finally {
-
-    session.endSession();
-
-  }
-
-};
-
-
-
+}
 
 export const createRazorpayOrder = async (req, res) => {
 
-  try {
+try {
 
-    const { movieId, theatreId, seats } = req.body;
-    const userId = req.user._id;
+const { movieId, theatreId, seats } = req.body
+const userId = req.user._id
 
-    const theatre = await Theatre.findById(theatreId);
+if (!movieId || !theatreId || !seats?.length)
+throw new Error("Movie theatre seats required")
 
-    if (!theatre)
-      return res.status(404).json({
-        message: "Theatre not found",
-      });
+const theatre = await Theatre.findById(theatreId)
 
+if (!theatre)
+throw new Error("Theatre not found")
 
-    const movie = await Movie.findById(movieId);
+const movie = await Movie.findById(movieId)
 
-    if (!movie)
-      return res.status(404).json({
-        message: "Movie not found",
-      });
+if (!movie)
+throw new Error("Movie not found")
 
+const flatSeats = theatre.seats.flat()
 
-    const amount = movie.ticketPrice * seats.length * 100;
+for (const s of seats) {
+if (!flatSeats.includes(s))
+throw new Error(`Invalid seat ${s}`)
+}
 
+const already = seats.filter(s => theatre.bookedSeats.includes(s))
 
-    const order = await razorpay.orders.create({
-      amount,
-      currency: "INR",
-      receipt: `rcpt_${Date.now()}`,
-    });
+if (already.length)
+throw new Error(`Already booked ${already.join(",")}`)
 
+const amount = movie.ticketPrice * seats.length * 100
 
-    const booking = await Booking.create({
-      userId,
-      movieId,
-      theatreId,
-      seats,
-      isPaid: false,
-      payment: {
-        orderId: order.id,
-        status: "pending",
-      },
-    });
+const order = await razorpay.orders.create({
+amount,
+currency: "INR",
+receipt: `rcpt_${Date.now()}`
+})
 
+const booking = await Booking.create({
+userId,
+movieId,
+theatreId,
+seats,
+isPaid: false,
+payment: {
+orderId: order.id,
+status: "pending"
+}
+})
 
-    res.json({
-      order,
-      bookingId: booking._id,
-    });
+res.json({
+order,
+bookingId: booking._id
+})
 
-  } catch (err) {
+} catch (err) {
 
-    res.status(500).json({
-      message: err.message,
-    });
+res.status(400).json({
+message: err.message
+})
 
-  }
+}
 
-};
-
-
-
+}
 
 export const verifyPayment = async (req, res) => {
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+const session = await mongoose.startSession()
+session.startTransaction()
 
-  try {
+try {
 
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      bookingId,
-    } = req.body;
+const {
+razorpay_order_id,
+razorpay_payment_id,
+razorpay_signature,
+bookingId
+} = req.body
 
+if (!bookingId)
+throw new Error("BookingId required")
 
-    const expected = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest("hex");
+const expected = crypto
+.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+.update(`${razorpay_order_id}|${razorpay_payment_id}`)
+.digest("hex")
 
+if (expected !== razorpay_signature)
+throw new Error("Invalid signature")
 
-    if (expected !== razorpay_signature)
-      throw new Error("Invalid signature");
+const booking = await Booking.findById(bookingId).session(session)
 
+if (!booking)
+throw new Error("Booking not found")
 
-    const booking = await Booking.findById(bookingId).session(session);
+if (booking.isPaid)
+throw new Error("Already paid")
 
-    if (!booking)
-      throw new Error("Booking not found");
+const theatre = await Theatre.findById(booking.theatreId).session(session)
 
+const updated = await Theatre.findOneAndUpdate(
+{ _id: theatre._id, bookedSeats: { $nin: booking.seats } },
+{ $addToSet: { bookedSeats: { $each: booking.seats } } },
+{ session }
+)
 
-    const theatre = await Theatre.findById(booking.theatreId).session(session);
+if (!updated)
+throw new Error("Seats already booked")
 
-    const updated = await Theatre.findOneAndUpdate(
-      {
-        _id: theatre._id,
-        bookedSeats: { $nin: booking.seats },
-      },
-      {
-        $addToSet: {
-          bookedSeats: { $each: booking.seats },
-        },
-      },
-      {
-        session,
-      }
-    );
+const movie = await Movie.findById(booking.movieId).session(session)
 
-    if (!updated)
-      throw new Error("Seats already booked");
+const qr = await generateQR(booking, movie, theatre)
 
+booking.qrCode = qr
+booking.isPaid = true
 
-    const movie = await Movie.findById(booking.movieId).session(session);
+booking.payment = {
+orderId: razorpay_order_id,
+paymentId: razorpay_payment_id,
+signature: razorpay_signature,
+status: "paid"
+}
 
+await booking.save({ session })
 
-    const qr = await generateQR(booking, movie, theatre);
+await session.commitTransaction()
 
-    booking.qrCode = qr;
+const populated = await Booking.findById(booking._id)
+.populate("movieId")
+.populate("theatreId")
+.populate("userId", "name email")
 
-    booking.isPaid = true;
+res.json(populated)
 
-    booking.payment = {
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      signature: razorpay_signature,
-      status: "paid",
-    };
+} catch (err) {
 
-    await booking.save({ session });
+await session.abortTransaction()
 
+res.status(400).json({
+message: err.message
+})
 
-    await session.commitTransaction();
+} finally {
 
+session.endSession()
 
-    res.json(booking);
+}
 
-  } catch (err) {
-
-    await session.abortTransaction();
-
-    res.status(400).json({
-      message: err.message,
-    });
-
-  } finally {
-
-    session.endSession();
-
-  }
-
-};
-
-
-
+}
 
 export const getUserBookings = async (req, res) => {
 
-  const bookings = await Booking.find({
-    userId: req.params.userId,
-  })
-    .populate("movieId")
-    .populate("theatreId")
-    .sort({ createdAt: -1 });
+const bookings = await Booking.find({
+userId: req.params.userId,
+isPaid: true
+})
+.populate("movieId")
+.populate("theatreId")
+.sort({ createdAt: -1 })
 
-  res.json(bookings);
+res.json(bookings)
 
-};
-
-
-
+}
 
 export const getAllBookings = async (req, res) => {
 
-  const bookings = await Booking.find()
-    .populate("userId")
-    .populate("movieId")
-    .populate("theatreId")
-    .sort({ createdAt: -1 });
+const bookings = await Booking.find({ isPaid: true })
+.populate("userId", "name email")
+.populate("movieId")
+.populate("theatreId")
+.sort({ createdAt: -1 })
 
-  res.json(bookings);
+res.json(bookings)
 
-};
-
-
-
+}
 
 export const deleteBooking = async (req, res) => {
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+const session = await mongoose.startSession()
+session.startTransaction()
 
-  try {
+try {
 
-    const booking = await Booking.findById(req.params.bookingId).session(session);
+const booking = await Booking.findById(req.params.bookingId).session(session)
 
-    if (!booking)
-      throw new Error("Booking not found");
+if (!booking)
+throw new Error("Booking not found")
 
+await Theatre.updateOne(
+{ _id: booking.theatreId },
+{ $pull: { bookedSeats: { $in: booking.seats } } },
+{ session }
+)
 
-    await Theatre.updateOne(
-      {
-        _id: booking.theatreId,
-      },
-      {
-        $pull: {
-          bookedSeats: { $in: booking.seats },
-        },
-      },
-      { session }
-    );
+await booking.deleteOne({ session })
 
+await session.commitTransaction()
 
-    await booking.deleteOne({ session });
+res.json({ message: "Deleted" })
 
+} catch (err) {
 
-    await session.commitTransaction();
+await session.abortTransaction()
 
+res.status(400).json({ message: err.message })
 
-    res.json({
-      message: "Booking deleted",
-    });
+} finally {
 
-  } catch (err) {
+session.endSession()
 
-    await session.abortTransaction();
+}
 
-    res.status(400).json({
-      message: err.message,
-    });
-
-  } finally {
-
-    session.endSession();
-
-  }
-
-};
-
-
-
+}
 
 export const updateBookingSeats = async (req, res) => {
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+const session = await mongoose.startSession()
+session.startTransaction()
 
-  try {
+try {
 
-    const { newSeats } = req.body;
+const { newSeats } = req.body
 
-    const booking = await Booking.findById(req.params.bookingId).session(session);
+if (!newSeats?.length)
+throw new Error("Seats required")
 
-    if (!booking)
-      throw new Error("Booking not found");
+const booking = await Booking.findById(req.params.bookingId).session(session)
 
+if (!booking)
+throw new Error("Booking not found")
 
-    await Theatre.updateOne(
-      { _id: booking.theatreId },
-      {
-        $pull: { bookedSeats: { $in: booking.seats } },
-      },
-      { session }
-    );
+await Theatre.updateOne(
+{ _id: booking.theatreId },
+{ $pull: { bookedSeats: { $in: booking.seats } } },
+{ session }
+)
 
+const updated = await Theatre.findOneAndUpdate(
+{ _id: booking.theatreId, bookedSeats: { $nin: newSeats } },
+{ $addToSet: { bookedSeats: { $each: newSeats } } },
+{ session }
+)
 
-    const updated = await Theatre.findOneAndUpdate(
-      {
-        _id: booking.theatreId,
-        bookedSeats: { $nin: newSeats },
-      },
-      {
-        $addToSet: { bookedSeats: { $each: newSeats } },
-      },
-      { session }
-    );
+if (!updated)
+throw new Error("Seats already booked")
 
-    if (!updated)
-      throw new Error("Seats already booked");
+booking.seats = newSeats
 
+const movie = await Movie.findById(booking.movieId).session(session)
+const theatre = await Theatre.findById(booking.theatreId).session(session)
 
-    booking.seats = newSeats;
+const qr = await generateQR(booking, movie, theatre)
 
-    await booking.save({ session });
+booking.qrCode = qr
 
+await booking.save({ session })
 
-    await session.commitTransaction();
+await session.commitTransaction()
 
-    res.json(booking);
+const populated = await Booking.findById(booking._id)
+.populate("movieId")
+.populate("theatreId")
 
-  } catch (err) {
+res.json(populated)
 
-    await session.abortTransaction();
+} catch (err) {
 
-    res.status(400).json({
-      message: err.message,
-    });
+await session.abortTransaction()
 
-  } finally {
+res.status(400).json({ message: err.message })
 
-    session.endSession();
+} finally {
 
-  }
+session.endSession()
 
-};
+}
+
+}
