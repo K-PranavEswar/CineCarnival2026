@@ -116,31 +116,12 @@ export default function TheatreSelection() {
         )}
       </section>
 
-      {/* STICKY DATE SELECTOR - Responsive sizing */}
-      <nav className="sticky top-0 bg-[#060607]/90 backdrop-blur-md border-y border-white/5 z-40">
-        <div className="max-w-6xl mx-auto px-4 md:px-6 py-3 md:py-4 flex gap-2 md:gap-4 overflow-x-auto no-scrollbar">
-          {["Today", "Tomorrow", "18 Feb", "19 Feb", "20 Feb"].map((d, i) => (
-            <button
-              key={i}
-              onClick={() => setSelectedDate(i)}
-              className={`px-4 md:px-6 py-2 md:py-3 rounded-xl border text-xs md:text-sm font-bold whitespace-nowrap transition-all ${
-                selectedDate === i
-                  ? "bg-[#e11d48] text-white border-[#e11d48]"
-                  : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
-              }`}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-      </nav>
-
       {/* THEATRE LIST */}
       <main className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-12">
         <div className="flex justify-between items-end mb-6 md:mb-8">
           <h2 className="text-lg md:text-xl font-bold flex gap-2 md:gap-3 items-center uppercase tracking-wider">
             <span className="w-1.5 h-6 md:w-2 md:h-8 bg-[#e11d48] rounded-full" />
-            Theatres
+            Theatre
           </h2>
           <span className="text-gray-500 text-[10px] md:text-sm font-medium">
             Found {theatres.length} venues

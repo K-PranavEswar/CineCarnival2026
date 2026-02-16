@@ -177,7 +177,7 @@ export default function Layout() {
       <footer className="py-8 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-4 text-center">
             <p className="text-slate-500 text-sm font-medium tracking-wide">
-                &copy; {new Date().getFullYear()} <span className="text-slate-300 uppercase">Cine Carnival</span>. 
+                &copy; 2026 <span className="text-slate-300 uppercase">Cine Carnival</span>. 
                 <span className="hidden sm:inline"> Crafted by </span>
                 <span className="text-carnival-primary">Pranav Eswar</span>.
             </p>
